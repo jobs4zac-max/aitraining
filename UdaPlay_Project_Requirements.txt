@@ -1,0 +1,151 @@
+UdaPlay AI Research Agent: Technical Requirements & Architecture Document
+
+================================================================================
+PROJECT OVERVIEW
+================================================================================
+You have been assigned as an AI Engineer to design and implement UdaPlay, an intelligent 
+gaming research agent for a gaming analytics platform. UdaPlay addresses queries from 
+executives, analysts, and gamers by accessing internal knowledge (via a vector database) 
+or dynamically falling back to external web searches when internal data is absent or 
+low-confidence.
+
+================================================================================
+TECH STACK
+================================================================================
+- Language: Python 3.11+
+- Orchestration Framework: LangChain
+- LLM & Embeddings: OpenAI (gpt-4o-mini, text-embedding-3-small)
+- Vector Database: FAISS
+- Web Search Engine: Tavily API
+- Data Validation & Schemas: Pydantic (v2)
+- Environment Configuration: python-dotenv
+
+================================================================================
+ENVIRONMENT & SETUP REQUIREMENTS
+================================================================================
+1. Create a `config.env` file in the root project directory with the following entries:
+
+   OPENAI_API_KEY="sk-..."
+   TAVILY_API_KEY="tvly-..."
+   OPENAI_BASE_URL="https://openai.vocareum.com/v1"
+
+2. Verify environment variable initialization at the start of your workflow:
+
+   import os
+   from dotenv import load_dotenv
+
+   load_dotenv("config.env")
+
+   assert os.getenv("OPENAI_API_KEY") is not None, "OPENAI_API_KEY missing"
+   assert os.getenv("TAVILY_API_KEY") is not None, "TAVILY_API_KEY missing"
+
+   OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://openai.vocareum.com/v1")
+
+================================================================================
+PROJECT ARCHITECTURE & KEY DELIVERABLES
+================================================================================
+
+Part 1: RAG Pipeline Implementation (Udaplay_01_solution_project.ipynb)
+--------------------------------------------------------------------------------
+- Data Processing:
+  * Load raw video game JSON data (containing Name, Platform, Genre, Publisher, Description, Release Year).
+  * Parse, validate, and convert JSON documents into structured Document objects suitable for embedding.
+
+- FAISS Vector Store Initialization:
+  * Instantiate OpenAI embeddings using text-embedding-3-small.
+  * Index game documents into a persistent FAISS vector store (FAISS.from_documents(...)).
+  * Implement local disk persistence (faiss_index.save_local("faiss_index_udaplay")) to allow reload across runs.
+
+- Semantic Retrieval Verification:
+  * Build a dedicated similarity search utility function.
+  * Run test queries to verify top-k semantic similarity retrieval performance.
+
+Part 2: Agent Architecture (Udaplay_02_solution_project.ipynb)
+--------------------------------------------------------------------------------
+Build a stateful LangChain agent that coordinates tool usage via a two-tier decision workflow:
+
+[ User Query ]
+      |
+      v
+[ Tool: retrieve_game ] --(Queries FAISS Vector DB)--> [ Internal Context ]
+      |                                                     |
+      +-----------------------------------------------------+
+                               |
+                               v
+                  [ Tool: evaluate_retrieval ]
+                               |
+               +---------------+---------------+
+               v                               v
+       (High Confidence)               (Low Confidence)
+               |                               |
+               |                               v
+               |                   [ Tool: game_web_search ]
+               |                    (Tavily API Fallback)
+               |                               |
+               +---------------+---------------+
+                               |
+                               v
+                   [ Structured Final Answer ]
+
+Core Tools to Implement:
+1. retrieve_game(query: str) -> str
+   - Performs semantic search on the local FAISS index.
+   - Returns formatted game details (Title, Platform, Genre, Publisher, Release Date, Description).
+
+2. evaluate_retrieval(query: str, retrieved_docs: str) -> dict
+   - Evaluates if the retrieved FAISS content is relevant and sufficient to answer the prompt.
+   - Returns a structured evaluation containing confidence_score (0.0 to 1.0), is_sufficient (boolean), and reasoning (text).
+
+3. game_web_search(query: str) -> str
+   - Invokes the Tavily Search API (TavilySearchResults).
+   - Fetches real-time or missing web data if FAISS evaluation fails or lacks context.
+
+================================================================================
+FUNCTIONAL REQUIREMENTS & WORKFLOW STATE
+================================================================================
+1. State Management:
+   - Maintain short-term conversational context across multi-turn user sessions.
+
+2. Decision Logic:
+   - Step 1: Query internal FAISS data via retrieve_game.
+   - Step 2: Pass output to evaluate_retrieval.
+   - Step 3: If is_sufficient == True, generate the answer directly using retrieved context.
+   - Step 4: If is_sufficient == False, trigger game_web_search to fetch real-time results.
+
+3. Output Format & Citation Rules:
+   - Every final response must present data clearly, highlighting Key Details (Platform, Publisher, Release Date).
+   - Citations: Explicitly state source origin (Source: Internal Game Database vs. Source: Web Search via Tavily).
+
+================================================================================
+EVALUATION CRITERIA & RUBRIC MAPPING
+================================================================================
+- RAG Pipeline: Load JSON data, generate embeddings, and build FAISS vector store.
+  Expected Output: Working FAISS index with persistence and verified similarity search queries in Notebook 01.
+
+- Agent Tools: Implement retrieve_game, evaluate_retrieval, and game_web_search.
+  Expected Output: Validated LangChain @tool functions executing inside the agent framework.
+
+- Stateful Workflow: Fallback mechanism from RAG to Tavily Web Search based on evaluation.
+  Expected Output: State machine/agent that maintains session context and routes tool executions dynamically.
+
+- Performance Demonstration: Run evaluation prompts showing reasoning traces and cited responses.
+  Expected Output: Execution outputs in Notebook 02 for 3 distinct test queries (Database match, Missing game, Future/recent release).
+
+================================================================================
+SAMPLE TEST SCENARIOS
+================================================================================
+- Query 1 (Internal DB Match): "When was Pokémon Red launched, and on what platform?"
+  Expected Behavior: Hits FAISS Vector DB -> Evaluation passes -> Returns answer with internal citation.
+
+- Query 2 (Fallback Trigger): "What is Rockstar Games working on right now?"
+  Expected Behavior: FAISS search fails/low confidence -> Evaluation fails -> Triggers Tavily web search -> Combines web data with citation.
+
+- Query 3 (Release Verification): "When was God of War Ragnarok released?"
+  Expected Behavior: Evaluates local records -> Completes via web fallback if absent -> Formats structured report.
+
+================================================================================
+SUGGESTED ENHANCEMENTS (BONUS POINTS)
+================================================================================
+- Long-Term Memory: Persist facts learned from web searches back into the FAISS vector database to enrich internal knowledge over time.
+- Structured Outputs: Return final agent answers as structured Pydantic models alongside natural text outputs.
+- Rich Metadata Filters: Enable FAISS metadata filtering by publisher or platform during internal retrieval.

@@ -1,0 +1,57 @@
+[project]
+name = "udaplay"
+version = "0.1.0"
+description = "UdaPlay - an AI gaming research agent with FAISS RAG and open-source web-search fallback"
+requires-python = ">=3.11,<3.13"
+
+# Pinned to the LangChain 0.3 line: it is the last series where the classic
+# `create_tool_calling_agent` + `AgentExecutor` imports used by this project's
+# rubric work exactly as documented. LangChain 1.x moved them to
+# `langchain-classic`.
+dependencies = [
+    "langchain==0.3.30",
+    "langchain-core==0.3.86",
+    "langchain-community==0.3.31",
+    "langchain-openai==0.3.35",
+    "faiss-cpu==1.15.0",
+    "pydantic==2.13.5",
+    "python-dotenv==1.2.3",
+    "ddgs==9.16.0",
+    # Wikipedia is queried through the MediaWiki API directly rather than the
+    # `wikipedia` PyPI package: that package is unmaintained since 2014, sends
+    # no User-Agent header, and is now rejected by Wikipedia with a non-JSON
+    # error body (which surfaces as a bare JSONDecodeError).
+    "requests>=2.32.0",
+    "streamlit==1.63.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+]
+# DeepEval is kept out of the runtime set: it is a large dependency tree needed
+# only when scoring the agent, and it has no LangChain dependency so it cannot
+# disturb the pinned 0.3 line.
+eval = [
+    "deepeval==4.2.1",
+]
+
+[tool.uv]
+# Deliberately not an installable distribution: the project is run as
+# `python -m udaplay ...` from the project root. That keeps deployment to a
+# restricted host (e.g. hosted JupyterLab) to two steps -- copy the folder,
+# `pip install -r requirements.txt` -- with no build step to fail, and keeps
+# the exported requirements.txt free of a self-reference.
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The project is not installed, so put the root on sys.path to make
+# `import udaplay` resolve -- the same mechanism as running from the root.
+pythonpath = ["."]
+# Tests that reach the network or need an API key are marked `live` and
+# deselected by default, so the default run is offline and deterministic.
+addopts = "-q -m 'not live'"
+markers = [
+    "live: requires network access and a valid OPENAI_API_KEY",
+]

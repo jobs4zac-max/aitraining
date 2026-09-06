@@ -1,0 +1,26 @@
+# Secrets -- never commit these
+.env
+config.env
+*.env
+!.env.example
+
+# Generated FAISS index (rebuild with `python -m udaplay index`)
+faiss_index_udaplay/
+
+# Logs
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+.virtual_documents/
+anaconda_projects/
+
+# macOS
+.DS_Store
