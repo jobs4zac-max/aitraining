@@ -1,0 +1,39 @@
+# Secrets must never reach the build context: with `gcloud run deploy --source`
+# the whole directory is uploaded to Cloud Build, so an ignored .env is the only
+# thing keeping the key out of a build artefact.
+.env
+config.env
+*.env
+!.env.example
+
+# Virtualenvs and local tooling
+.venv/
+venv/
+uv.lock
+*.egg-info/
+
+# Generated at runtime inside the container (into /tmp), never copied in
+faiss_index_udaplay/
+logs/
+
+# Not needed by the running app
+tests/
+evals/
+*.md
+UdaPlay_Project_Requirements.txt
+udaplay_vocareum.zip
+Dockerfile
+.dockerignore
+
+# Caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+.virtual_documents/
+anaconda_projects/
+
+# OS / VCS
+.DS_Store
+.git/
+.gitignore

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import logging.handlers
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,7 +25,9 @@ from pydantic import BaseModel, Field
 
 from .config import PROJECT_ROOT
 
-LOG_DIR = PROJECT_ROOT / "logs"
+# Overridable for the same reason as INDEX_DIR -- see udaplay/config.py. Set as
+# a real environment variable, not via .env.
+LOG_DIR = Path(os.getenv("UDAPLAY_LOG_DIR") or PROJECT_ROOT / "logs")
 TEXT_LOG = LOG_DIR / "udaplay.log"
 RUN_LOG = LOG_DIR / "runs.jsonl"
 

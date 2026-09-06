@@ -24,8 +24,16 @@ DEFAULT_CHAT_MODEL = "gpt-4o-mini"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-GAMES_DIR = PROJECT_ROOT / "data" / "games"
-INDEX_DIR = PROJECT_ROOT / "faiss_index_udaplay"
+
+# Data and index locations are overridable so the app can run where the
+# application directory is not a good place to write -- Cloud Run, for one,
+# backs the container filesystem with memory, so writes belong in /tmp.
+#
+# These are read from the process environment at import time, *before*
+# `load_env()` has run, so they must be set as real environment variables
+# (a Dockerfile `ENV`, or a Cloud Run variable) rather than in `.env`.
+GAMES_DIR = Path(os.getenv("UDAPLAY_GAMES_DIR") or PROJECT_ROOT / "data" / "games")
+INDEX_DIR = Path(os.getenv("UDAPLAY_INDEX_DIR") or PROJECT_ROOT / "faiss_index_udaplay")
 
 _loaded = False
 

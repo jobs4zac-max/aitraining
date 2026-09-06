@@ -11,6 +11,8 @@ See [DISCOVERY.md](DISCOVERY.md) for the design rationale and requirement tracea
 ## Layout
 
 ```
+├── Dockerfile               Cloud Run image (Streamlit frontend)
+├── .dockerignore            keeps .env, tests and evals out of the build context
 ├── app.py                   Streamlit chat frontend
 ├── udaplay/
 │   ├── config.py            env loading, voc- key detection, LLM/embedding clients
@@ -310,6 +312,79 @@ deterministic and is the actual requirement. The LLM-judged columns are a regres
 | `ModuleNotFoundError: udaplay` | Run from the project root, not a subdirectory |
 | Streamlit port already in use | `python -m udaplay ui --port 8502` |
 | `could not import the eval suite` | `uv sync --extra eval` |
+
+## Deploying to Cloud Run
+
+[Dockerfile](Dockerfile) at the repo root builds the Streamlit frontend. This is what Cloud
+Run's "Build Type: Dockerfile / `/Dockerfile`" option expects, so no further configuration
+is needed on that screen.
+
+### Deploy
+
+```bash
+gcloud run deploy udaplay \
+  --source . \
+  --region europe-west1 \
+  --memory 2Gi \
+  --allow-unauthenticated \
+  --session-affinity \
+  --set-env-vars OPENAI_BASE_URL=https://openai.vocareum.com/v1 \
+  --set-secrets OPENAI_API_KEY=udaplay-openai-key:latest
+```
+
+Create the secret first:
+
+```bash
+printf 'voc-your-key-here' | gcloud secrets create udaplay-openai-key --data-file=-
+gcloud secrets add-iam-policy-binding udaplay-openai-key \
+  --member="serviceAccount:$(gcloud projects describe "$(gcloud config get-value project)" \
+      --format='value(projectNumber)')-compute@developer.gserviceaccount.com" \
+  --role=roles/secretmanager.secretAccessor
+```
+
+If you deploy from the console instead, set `OPENAI_API_KEY` and `OPENAI_BASE_URL` under
+**Variables & Secrets**, and raise memory under **Container**.
+
+### Flags that matter, and why
+
+| Flag | Why |
+|---|---|
+| `--memory 2Gi` | The default 512 MiB **will OOM**. `faiss` + `langchain` + `streamlit` is a heavy import graph, and Cloud Run counts the in-memory filesystem against the same limit. 1 GiB usually works; 2 GiB has headroom |
+| `--session-affinity` | Streamlit is a stateful websocket app. Without affinity a reconnect can land on a different instance and the session resets mid-conversation |
+| `--set-secrets` for the key | Keeps the key out of the image and out of `gcloud` shell history. `--set-env-vars` would work but is worse |
+| `--min-instances 1` (optional) | Each cold start rebuilds the FAISS index (15 embedding calls, a few seconds). Keeping one warm avoids that, at the cost of always-on billing |
+
+`OPENAI_BASE_URL` is technically optional — a `voc-` prefixed key selects the Vocareum
+proxy automatically — but setting it explicitly makes the deployment self-documenting.
+
+### How the container differs from local
+
+- **The index is built at startup, into `/tmp`.** It is not baked into the image, because
+  that would require the API key at build time. First use costs 15 embedding calls.
+- **Writes go to `/tmp`** via `UDAPLAY_INDEX_DIR` and `UDAPLAY_LOG_DIR`. These are read at
+  import time, so they must be real environment variables — putting them in `.env` will not
+  work.
+- **Logs are ephemeral.** `/tmp` dies with the instance, so `runs.jsonl` does not persist
+  across restarts and the sidebar's session stats reset. For durable logs, write to Cloud
+  Logging or mount a GCS volume at `UDAPLAY_LOG_DIR`.
+- **`tests/` and `evals/` are not in the image** (see [.dockerignore](.dockerignore)) — the
+  frontend does not need them. Run the eval suite locally.
+
+### Verified locally before deploying
+
+The image was built and exercised with Docker, not just written:
+
+```bash
+docker build -t udaplay:test .
+docker run -d -e PORT=9090 -p 9091:9090 udaplay:test
+curl localhost:9091/_stcore/health        # -> ok
+```
+
+Checked: `import faiss` succeeds (needs `libgomp1`, which `python:slim` omits — without it
+the image builds and then dies at import); Streamlit binds `0.0.0.0:$PORT` rather than
+localhost; `$PORT` is honoured, not hardcoded; `streamlit` runs as PID 1 so Cloud Run's
+SIGTERM reaches it (container stops in ~1s); the key is read from the environment with no
+`.env` present; and the index builds into `/tmp` as non-root uid 1000.
 
 ## Usage reference
 
